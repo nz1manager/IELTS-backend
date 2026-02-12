@@ -15,13 +15,11 @@ app.use(cors({
 }));
 app.use(express.json());
 
-// PostgreSQL Connection Pool
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
     ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
 });
 
-// Initialize Database
 async function initializeDatabase() {
     try {
         await pool.query(`
@@ -38,14 +36,14 @@ async function initializeDatabase() {
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         `);
-        console.log('✅ Database initialized: users table ready');
+        console.log('✅ Database ready');
     } catch (error) {
-        console.error('❌ Database initialization error:', error);
+        console.error('❌ DB Error:', error);
     }
 }
 initializeDatabase();
 
-// Google OAuth2 - Initiate Login
+// Google OAuth2 - Login boshlash
 app.get('/auth/google', (req, res) => {
     const params = querystring.stringify({
         client_id: process.env.GOOGLE_CLIENT_ID,
@@ -58,10 +56,12 @@ app.get('/auth/google', (req, res) => {
     res.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${params}`);
 });
 
-// Google OAuth2 - Callback
+// Callback - GitHub Pages uchun tozalangan redirect
 app.get('/auth/google/callback', async (req, res) => {
     const { code } = req.query;
-    if (!code) return res.redirect(`${process.env.CLIENT_URL}/?error=no_code`);
+    const clientUrl = process.env.CLIENT_URL.replace(/\/$/, ""); // Oxiridagi slashni olib tashlaydi
+
+    if (!code) return res.redirect(`${clientUrl}?error=no_code`);
 
     try {
         const tokenResponse = await axios.post('https://oauth2.googleapis.com/token', {
@@ -72,37 +72,35 @@ app.get('/auth/google/callback', async (req, res) => {
             grant_type: 'authorization_code'
         });
 
-        const { access_token } = tokenResponse.data;
-        const userInfoResponse = await axios.get('https://www.googleapis.com/oauth2/v2/userinfo', {
-            headers: { Authorization: `Bearer ${access_token}` }
+        const userInfo = await axios.get('https://www.googleapis.com/oauth2/v2/userinfo', {
+            headers: { Authorization: `Bearer ${tokenResponse.data.access_token}` }
         });
 
-        const { id: google_id, email, name, picture } = userInfoResponse.data;
+        const { id: google_id, email, name, picture } = userInfo.data;
         const existingUser = await pool.query('SELECT * FROM users WHERE google_id = $1', [google_id]);
 
         if (existingUser.rows.length === 0) {
-            const nameParts = name ? name.split(' ') : [];
+            const parts = name ? name.split(' ') : [];
             const newUser = await pool.query(
                 `INSERT INTO users (google_id, email, first_name, last_name, avatar) VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-                [google_id, email, nameParts[0] || '', nameParts.slice(1).join(' ') || '', picture]
+                [google_id, email, parts[0] || '', parts.slice(1).join(' ') || '', picture]
             );
-            return res.redirect(`${process.env.CLIENT_URL}/?login=success&isNew=true&id=${newUser.rows[0].id}`);
+            return res.redirect(`${clientUrl}?login=success&isNew=true&id=${newUser.rows[0].id}`);
         } else {
             const user = existingUser.rows[0];
-            return res.redirect(`${process.env.CLIENT_URL}/?login=success&isNew=${!user.is_profile_complete}&id=${user.id}&name=${encodeURIComponent(user.first_name || '')}`);
+            return res.redirect(`${clientUrl}?login=success&isNew=${!user.is_profile_complete}&id=${user.id}&name=${encodeURIComponent(user.first_name || '')}`);
         }
     } catch (error) {
-        res.redirect(`${process.env.CLIENT_URL}/?error=auth_failed`);
+        console.error('Auth error:', error.message);
+        res.redirect(`${clientUrl}?error=auth_failed`);
     }
 });
 
-// API: Save Profile
 app.post('/api/profile', async (req, res) => {
     const { id, first_name, last_name, phone, group_name } = req.body;
     try {
         const result = await pool.query(
-            `UPDATE users SET first_name = $1, last_name = $2, phone = $3, group_name = $4, is_profile_complete = true 
-             WHERE id = $5 RETURNING *`,
+            `UPDATE users SET first_name = $1, last_name = $2, phone = $3, group_name = $4, is_profile_complete = true WHERE id = $5 RETURNING *`,
             [first_name, last_name, phone, group_name, id]
         );
         res.json({ success: true, user: result.rows[0] });
@@ -111,7 +109,6 @@ app.post('/api/profile', async (req, res) => {
     }
 });
 
-// API: Get Users
 app.get('/api/users', async (req, res) => {
     try {
         const result = await pool.query('SELECT * FROM users ORDER BY created_at DESC');
