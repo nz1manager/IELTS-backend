@@ -8,19 +8,22 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// Middleware
+// 1. Middleware sozlamalari
+// CLIENT_URL Render panelida https://nz1manager.github.io/IELTS-platform bo'lishi kerak
 app.use(cors({
     origin: process.env.CLIENT_URL,
     credentials: true
 }));
 app.use(express.json());
 
+// 2. Database ulanishi
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
-    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+    ssl: { rejectUnauthorized: false }
 });
 
-async function initializeDatabase() {
+// Jadvalni tekshirish
+async function initDB() {
     try {
         await pool.query(`
             CREATE TABLE IF NOT EXISTS users (
@@ -36,35 +39,36 @@ async function initializeDatabase() {
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         `);
-        console.log('✅ Database ready');
-    } catch (error) {
-        console.error('❌ DB Error:', error);
+        console.log('✅ Baza tayyor');
+    } catch (err) {
+        console.error('❌ Baza xatosi:', err);
     }
 }
-initializeDatabase();
+initDB();
 
-// Google OAuth2 - Login boshlash
+// 3. Google OAuth Login boshlash
 app.get('/auth/google', (req, res) => {
     const params = querystring.stringify({
         client_id: process.env.GOOGLE_CLIENT_ID,
         redirect_uri: `${process.env.SERVER_URL}/auth/google/callback`,
         response_type: 'code',
         scope: 'email profile',
-        access_type: 'offline',
         prompt: 'consent'
     });
     res.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${params}`);
 });
 
-// Callback - GitHub Pages uchun tozalangan redirect
+// 4. Google OAuth Callback (Redirect muammosi shu yerda to'g'rilandi)
 app.get('/auth/google/callback', async (req, res) => {
     const { code } = req.query;
-    const clientUrl = process.env.CLIENT_URL.replace(/\/$/, ""); // Oxiridagi slashni olib tashlaydi
+    // CLIENT_URL oxiridagi slashni olib tashlaymiz xato bermasligi uchun
+    const clientUrl = process.env.CLIENT_URL.replace(/\/$/, "");
 
-    if (!code) return res.redirect(`${clientUrl}?error=no_code`);
+    if (!code) return res.redirect(`${clientUrl}/?error=no_code`);
 
     try {
-        const tokenResponse = await axios.post('https://oauth2.googleapis.com/token', {
+        // Token olish
+        const tokenRes = await axios.post('https://oauth2.googleapis.com/token', {
             client_id: process.env.GOOGLE_CLIENT_ID,
             client_secret: process.env.GOOGLE_CLIENT_SECRET,
             code,
@@ -72,43 +76,60 @@ app.get('/auth/google/callback', async (req, res) => {
             grant_type: 'authorization_code'
         });
 
-        const userInfo = await axios.get('https://www.googleapis.com/oauth2/v2/userinfo', {
-            headers: { Authorization: `Bearer ${tokenResponse.data.access_token}` }
+        // User ma'lumotlarini Google'dan olish
+        const userRes = await axios.get('https://www.googleapis.com/oauth2/v2/userinfo', {
+            headers: { Authorization: `Bearer ${tokenRes.data.access_token}` }
         });
 
-        const { id: google_id, email, name, picture } = userInfo.data;
-        const existingUser = await pool.query('SELECT * FROM users WHERE google_id = $1', [google_id]);
+        const { id: google_id, email, name, picture } = userRes.data;
+        const existing = await pool.query('SELECT * FROM users WHERE google_id = $1', [google_id]);
 
-        if (existingUser.rows.length === 0) {
+        let userId, isNew;
+        if (existing.rows.length === 0) {
             const parts = name ? name.split(' ') : [];
             const newUser = await pool.query(
-                `INSERT INTO users (google_id, email, first_name, last_name, avatar) VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+                `INSERT INTO users (google_id, email, first_name, last_name, avatar) 
+                 VALUES ($1, $2, $3, $4, $5) RETURNING id`,
                 [google_id, email, parts[0] || '', parts.slice(1).join(' ') || '', picture]
             );
-            return res.redirect(`${clientUrl}?login=success&isNew=true&id=${newUser.rows[0].id}`);
+            userId = newUser.rows[0].id;
+            isNew = true;
         } else {
-            const user = existingUser.rows[0];
-            return res.redirect(`${clientUrl}?login=success&isNew=${!user.is_profile_complete}&id=${user.id}&name=${encodeURIComponent(user.first_name || '')}`);
+            userId = existing.rows[0].id;
+            isNew = !existing.rows[0].is_profile_complete;
         }
+
+        // GitHub Pages uchun to'g'ri redirect (sub-papkani hisobga oladi)
+        res.redirect(`${clientUrl}/?login=success&isNew=${isNew}&id=${userId}`);
+
     } catch (error) {
-        console.error('Auth error:', error.message);
-        res.redirect(`${clientUrl}?error=auth_failed`);
+        console.error('OAuth Error:', error.message);
+        res.redirect(`${clientUrl}/?error=auth_failed`);
     }
 });
 
+// 5. Profilni saqlash API
 app.post('/api/profile', async (req, res) => {
     const { id, first_name, last_name, phone, group_name } = req.body;
     try {
         const result = await pool.query(
-            `UPDATE users SET first_name = $1, last_name = $2, phone = $3, group_name = $4, is_profile_complete = true WHERE id = $5 RETURNING *`,
+            `UPDATE users 
+             SET first_name = $1, last_name = $2, phone = $3, group_name = $4, is_profile_complete = true 
+             WHERE id = $5 RETURNING *`,
             [first_name, last_name, phone, group_name, id]
         );
-        res.json({ success: true, user: result.rows[0] });
+        
+        if (result.rows.length > 0) {
+            res.json({ success: true, user: result.rows[0] });
+        } else {
+            res.status(404).json({ success: false, error: "Foydalanuvchi topilmadi" });
+        }
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
     }
 });
 
+// 6. Admin uchun userlar ro'yxati
 app.get('/api/users', async (req, res) => {
     try {
         const result = await pool.query('SELECT * FROM users ORDER BY created_at DESC');
@@ -118,4 +139,4 @@ app.get('/api/users', async (req, res) => {
     }
 });
 
-app.listen(PORT, () => console.log(`🚀 Server on ${PORT}`));
+app.listen(PORT, () => console.log(`🚀 Server ${PORT}-portda yondi` || "Server error"));
