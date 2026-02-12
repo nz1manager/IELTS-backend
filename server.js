@@ -12,7 +12,7 @@ const allowedOrigins = ['https://nz1manager.github.io'];
 app.use(
   cors({
     origin: function (origin, callback) {
-      // allow requests with no origin (like mobile apps, curl, etc.) — optional
+      // allow requests with no origin (like mobile apps, curl, etc.) â€” optional
       if (!origin) return callback(null, true);
       if (allowedOrigins.includes(origin)) {
         return callback(null, true);
@@ -31,7 +31,7 @@ const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 // ----- Health check endpoint -----
 app.get('/', (req, res) => {
-  res.send('IELTS Actual Auth Backend — running');
+  res.send('IELTS Actual Auth Backend â€” running');
 });
 
 // ----- Google token verification endpoint -----
@@ -77,5 +77,5 @@ app.post('/api/auth/google', async (req, res) => {
 
 // ----- Start server -----
 app.listen(PORT, () => {
-  console.log(`✅ Server listening on port ${PORT}`);
+  console.log(`âœ… Server listening on port ${PORT}`);
 });
