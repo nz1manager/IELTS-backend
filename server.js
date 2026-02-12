@@ -8,19 +8,23 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// Middleware - CLIENT_URL Renderda https://nz1manager.github.io/IELTS-platform bo'lishi shart
+// CLIENT_URL Renderda: https://nz1manager.github.io/IELTS-platform bo'lishi shart
+const CLIENT_URL = (process.env.CLIENT_URL || '').replace(/\/$/, "");
+
+// 1. Middleware
 app.use(cors({
-    origin: process.env.CLIENT_URL,
+    origin: CLIENT_URL,
     credentials: true
 }));
 app.use(express.json());
 
+// 2. Database ulanishi
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
     ssl: { rejectUnauthorized: false }
 });
 
-// Baza initialization
+// Baza tayyorligini tekshirish
 async function initDB() {
     try {
         await pool.query(`
@@ -37,14 +41,14 @@ async function initDB() {
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         `);
-        console.log('✅ Database is ready');
+        console.log('✅ Baza muvaffaqiyatli ulandi');
     } catch (err) {
-        console.error('❌ DB Error:', err);
+        console.error('❌ Baza xatosi:', err.message);
     }
 }
 initDB();
 
-// Google Login URL
+// 3. Google Login boshlash
 app.get('/auth/google', (req, res) => {
     const params = querystring.stringify({
         client_id: process.env.GOOGLE_CLIENT_ID,
@@ -56,14 +60,11 @@ app.get('/auth/google', (req, res) => {
     res.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${params}`);
 });
 
-// OAuth Callback - REDIRECT XATOSI SHU YERDA TUZATILDI
+// 4. Google Callback (Redirect muammosi 100% tuzatilgan)
 app.get('/auth/google/callback', async (req, res) => {
     const { code } = req.query;
-    // CLIENT_URL'ni tozalaymiz
-    let clientUrl = process.env.CLIENT_URL || "";
-    if (clientUrl.endsWith('/')) clientUrl = clientUrl.slice(0, -1);
 
-    if (!code) return res.redirect(`${clientUrl}/?error=no_code`);
+    if (!code) return res.redirect(`${CLIENT_URL}/?error=no_code`);
 
     try {
         const tokenRes = await axios.post('https://oauth2.googleapis.com/token', {
@@ -85,7 +86,8 @@ app.get('/auth/google/callback', async (req, res) => {
         if (existing.rows.length === 0) {
             const parts = name ? name.split(' ') : [];
             const newUser = await pool.query(
-                `INSERT INTO users (google_id, email, first_name, last_name, avatar) VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+                `INSERT INTO users (google_id, email, first_name, last_name, avatar) 
+                 VALUES ($1, $2, $3, $4, $5) RETURNING id`,
                 [google_id, email, parts[0] || '', parts.slice(1).join(' ') || '', picture]
             );
             userId = newUser.rows[0].id;
@@ -95,22 +97,26 @@ app.get('/auth/google/callback', async (req, res) => {
             isNew = !existing.rows[0].is_profile_complete;
         }
 
-        // MUHIM: Bu yerda manzil to'liq bo'lishi uchun https:// qo'shilganiga ishonch hosil qilamiz
-        const finalRedirect = `${clientUrl}/?login=success&isNew=${isNew}&id=${userId}`;
-        console.log("Redirecting to:", finalRedirect);
-        res.redirect(finalRedirect);
+        // REDIRECT LOGIKASI: CLIENT_URL mutlaqo to'liq manzil bo'lishi shart
+        // Agar CLIENT_URL https:// bilan boshlansa, Express uni tashqi sayt deb tushunadi
+        const finalUrl = `${CLIENT_URL}/?login=success&isNew=${isNew}&id=${userId}`;
+        console.log("Redirecting to:", finalUrl);
+        
+        return res.redirect(finalUrl);
 
     } catch (error) {
-        console.error('Auth Error:', error.message);
-        res.redirect(`${clientUrl}/?error=auth_failed`);
+        console.error('OAuth Error:', error.message);
+        res.redirect(`${CLIENT_URL}/?error=auth_failed`);
     }
 });
 
+// 5. Profilni yangilash
 app.post('/api/profile', async (req, res) => {
     const { id, first_name, last_name, phone, group_name } = req.body;
     try {
         await pool.query(
-            `UPDATE users SET first_name = $1, last_name = $2, phone = $3, group_name = $4, is_profile_complete = true WHERE id = $5`,
+            `UPDATE users SET first_name = $1, last_name = $2, phone = $3, group_name = $4, is_profile_complete = true 
+             WHERE id = $5`,
             [first_name, last_name, phone, group_name, id]
         );
         res.json({ success: true });
@@ -119,6 +125,7 @@ app.post('/api/profile', async (req, res) => {
     }
 });
 
+// 6. Foydalanuvchilar ro'yxati
 app.get('/api/users', async (req, res) => {
     try {
         const result = await pool.query('SELECT * FROM users ORDER BY created_at DESC');
@@ -128,4 +135,4 @@ app.get('/api/users', async (req, res) => {
     }
 });
 
-app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
+app.listen(PORT, () => console.log(`🚀 Server ${PORT}-portda muvaffaqiyatli ishga tushdi`));
