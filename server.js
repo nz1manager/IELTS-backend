@@ -72,7 +72,8 @@ app.get('/auth/google/callback', async (req, res) => {
     const { code } = req.query;
     
     if (!code) {
-        return res.redirect(`${process.env.CLIENT_URL}/login?error=no_code`);
+        // Xato bo'lsa ham asosiy sahifaga qaytaradi
+        return res.redirect(`${process.env.CLIENT_URL}/?error=no_code`);
     }
 
     try {
@@ -94,7 +95,6 @@ app.get('/auth/google/callback', async (req, res) => {
 
         const { id: google_id, email, name, picture } = userInfoResponse.data;
         
-        // Split full name into first and last name
         const nameParts = name ? name.split(' ') : [];
         const first_name = nameParts[0] || '';
         const last_name = nameParts.slice(1).join(' ') || '';
@@ -105,8 +105,8 @@ app.get('/auth/google/callback', async (req, res) => {
             [email, google_id]
         );
 
+        // MUHIM: GitHub Pages uchun redirect manzillaridan /dashboard olib tashlandi
         if (existingUser.rows.length === 0) {
-            // New user
             const newUser = await pool.query(
                 `INSERT INTO users (google_id, email, first_name, last_name, avatar, is_profile_complete)
                  VALUES ($1, $2, $3, $4, $5, false)
@@ -115,29 +115,26 @@ app.get('/auth/google/callback', async (req, res) => {
             );
 
             const userId = newUser.rows[0].id;
+            // Yangi foydalanuvchi -> isNew=true
             return res.redirect(
-                `${process.env.CLIENT_URL}/dashboard?login=success&isNew=true&id=${userId}`
+                `${process.env.CLIENT_URL}/?login=success&isNew=true&id=${userId}`
             );
         } else {
-            // Existing user
             const user = existingUser.rows[0];
             
-            // Update avatar if changed
             if (user.avatar !== picture) {
-                await pool.query(
-                    'UPDATE users SET avatar = $1 WHERE id = $2',
-                    [picture, user.id]
-                );
+                await pool.query('UPDATE users SET avatar = $1 WHERE id = $2', [picture, user.id]);
             }
 
+            // Mavjud foydalanuvchi -> isNew=false
             return res.redirect(
-                `${process.env.CLIENT_URL}/dashboard?login=success&isNew=false&id=${user.id}&name=${encodeURIComponent(user.first_name || '')}`
+                `${process.env.CLIENT_URL}/?login=success&isNew=false&id=${user.id}&name=${encodeURIComponent(user.first_name || '')}`
             );
         }
 
     } catch (error) {
         console.error('Google OAuth error:', error.response?.data || error.message);
-        return res.redirect(`${process.env.CLIENT_URL}/login?error=auth_failed`);
+        return res.redirect(`${process.env.CLIENT_URL}/?error=auth_failed`);
     }
 });
 
