@@ -1,0 +1,21 @@
+{
+  "name": "lucky-jet-mirror-backend",
+  "version": "1.0.0",
+  "description": "Lucky Jet WebSocket Mirror Service",
+  "type": "module",
+  "main": "server.ts",
+  "scripts": {
+    "build": "tsc",
+    "start": "npx tsx server.ts",
+    "dev": "npx tsx --watch server.ts"
+  },
+  "dependencies": {
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3",
+    "ws": "^8.20.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.37",
+    "@types/ws": "^8.18.1"
+  }
+}
