@@ -24,8 +24,19 @@ function connectToGameServer() {
         }
     });
 
-    gameSocket.on('open', () => {
+  gameSocket.on('open', () => {
         console.log('Asl o\'yin serveriga ulandi.');
+
+        // O'yin serveriga aynan Lucky Jet ma'lumotlarini so'rab xabar yuboramiz
+        const subscribeMessage = {
+            action: "subscribe",
+            channel: "lucky-jet-94"
+        };
+
+        if (gameSocket && gameSocket.readyState === WebSocket.OPEN) {
+            gameSocket.send(JSON.stringify(subscribeMessage));
+            console.log('Lucky Jet kanaliga obuna bo\'lish so\'rovi yuborildi ✅');
+        }
     });
 
     gameSocket.on('message', (data) => {
