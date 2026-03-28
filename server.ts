@@ -22,37 +22,20 @@ function connectToGameServer() {
         }
     });
 
-    gameSocket.on('open', () => {
+   gameSocket.on('open', () => {
         console.log('Asl o\'yin serveriga ulandi ✅');
 
-        // 1-QADAM: Avtorizatsiyadan o'tish (Siz yuborgan token bilan)
-        const authMessage = {
-            id: 1,
-            method: 1,
-            params: {
-                name: "js",
-                token: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3NzQ5NzkzOTQsImlhdCI6MTc3NDcyMDE5NCwic3ViIjoiMTk5MDQwMTEiLCJjaGFubmVscyI6WyJsdWNreS1qZXQtOTQiXX0.whMWpJSdwKoOHDMNw_79RiEKe1j16P_OcB5Y7RUj2uI"
-            }
-        };
-
-        gameSocket.send(JSON.stringify(authMessage));
-        console.log('Avtorizatsiya so\'rovi yuborildi 🔑');
-
-        // 2-QADAM: Lucky Jet kanaliga obuna bo'lish
+        // Avtorizatsiyani olib tashlaymiz, chunki 3501 xatosi beryapti
+        // To'g'ridan-to'g'ri kanalga ulanishga harakat qilamiz
         const subscribeMessage = {
             action: "subscribe",
             channel: "lucky-jet-94"
         };
 
-        // Avtorizatsiyadan so'ng ozgina kutib yuboramiz
-        setTimeout(() => {
-            if (gameSocket.readyState === WebSocket.OPEN) {
-                gameSocket.send(JSON.stringify(subscribeMessage));
-                console.log('Lucky Jet kanaliga obuna yuborildi 🚀');
-            }
-        }, 500);
+        gameSocket.send(JSON.stringify(subscribeMessage));
+        console.log('Lucky Jet kanaliga obuna so\'rovi yuborildi 🚀');
     });
-
+    
     gameSocket.on('message', (data) => {
         const message = data.toString();
         
