@@ -1,21 +1,17 @@
 {
-  "name": "lucky-jet-mirror-backend",
+  "name": "jet-backend",
   "version": "1.0.0",
-  "description": "Lucky Jet WebSocket Mirror Service",
-  "type": "module",
+  "description": "",
   "main": "server.ts",
+  "type": "module",
   "scripts": {
-    "build": "tsc",
     "start": "npx tsx server.ts",
-    "dev": "npx tsx --watch server.ts"
+    "build": "npm install"
   },
   "dependencies": {
-    "tsx": "^4.21.0",
-    "typescript": "^5.9.3",
-    "ws": "^8.20.0"
-  },
-  "devDependencies": {
-    "@types/node": "^20.19.37",
-    "@types/ws": "^8.18.1"
+    "firebase-admin": "^12.0.0",
+    "ws": "^8.16.0",
+    "tsx": "^4.7.1",
+    "typescript": "^5.3.3"
   }
 }
